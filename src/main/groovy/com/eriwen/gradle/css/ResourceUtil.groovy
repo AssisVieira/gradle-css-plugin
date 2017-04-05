@@ -15,6 +15,8 @@
  */
 package com.eriwen.gradle.css
 
+import org.apache.commons.io.FileUtils
+
 /**
  * Operations to handle zip files and other resources on the classpath.
  *
@@ -38,8 +40,27 @@ class ResourceUtil {
         final File file = new File(targetDirectory, resourcePath)
         if (!file.exists()) {
             final InputStream inputStream = Thread.currentThread().contextClassLoader.getResourceAsStream(resourcePath)
+            if (inputStream == null)
+                throw new RuntimeException("Resource not found: "+ resourcePath)
             file << inputStream
             inputStream.close()
+        }
+        return file
+    }
+
+    File extractDirToDirectory(final File targetDirectory, final String resourceDirPath) {
+        if (targetDirectory.exists() && !targetDirectory.isDirectory()) {
+            throw new IllegalArgumentException("Target directory is a file!")
+        } else if (!targetDirectory.exists()) {
+            targetDirectory.mkdirs()
+        }
+
+        final File file = new File(targetDirectory, resourceDirPath)
+        if (!file.exists()) {
+            final URL url = Thread.currentThread().contextClassLoader.getResource(resourceDirPath)
+            if (url == null)
+                throw new RuntimeException("Resource not found: "+ resourceDirPath)
+            FileUtils.copyDirectory(new File(url.toURI()), file)
         }
         return file
     }

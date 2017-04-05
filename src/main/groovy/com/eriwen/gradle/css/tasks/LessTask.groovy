@@ -15,41 +15,16 @@
  */
 package com.eriwen.gradle.css.tasks
 
-import com.asual.lesscss.LessEngine
-import com.asual.lesscss.LessException
 import org.gradle.api.tasks.OutputDirectory
 import org.gradle.api.tasks.SourceTask
 import org.gradle.api.tasks.TaskAction
+import com.eriwen.gradle.css.ResourceUtil
+import com.eriwen.gradle.css.NodeExec
 
 class LessTask extends SourceTask {
+
     @OutputDirectory
     def dest
-
-    /**
-     * A custom exception to wrap the compiler error and the file it occurred 
-     * in in one exception so that gradle build failure messaging contains all the 
-     * relevant information. 
-     */
-    static class LessCompilationException extends RuntimeException {
-        File file
-        def project
-
-        LessCompilationException(cause, file, project) {
-            super(cause)
-            this.file = file
-            this.project = project
-        }
-
-        String getMessage() {
-            def path = project.relativePath(file)
-            def context = (cause instanceof LessException) ?
-                    "Less compilation error at ${path}:${cause.line}" :
-                    "Less compilation error in file ${path}"
-
-            """$context
-              |${cause.message}""".stripMargin()
-        }
-    }
 
     File getDest() {
         project.file(dest)
@@ -57,7 +32,6 @@ class LessTask extends SourceTask {
 
     @TaskAction
     def run() {
-        LessEngine engine = new LessEngine();
         logger.debug "Processing ${source.files.size()} files"
 
         source.visit { visitDetail ->
@@ -65,10 +39,10 @@ class LessTask extends SourceTask {
                 visitDetail.relativePath.getFile(getDest()).mkdir()
             } else {
                 if (visitDetail.name.endsWith(".less")) {
-                    // By convention _foo.less files are include-only
                     if (!visitDetail.name.startsWith("_")) {
                         def relativePathToCss = visitDetail.relativePath.replaceLastName(visitDetail.name.replace(".less", ".css"))
-                        compileLess(engine, visitDetail.file, relativePathToCss.getFile(getDest()))
+                        File outputFile = relativePathToCss.getFile(getDest())
+                        compileLess(visitDetail.file, outputFile)
                     }
                 } else {
                     logger.debug("Copying non-less resource ${visitDetail.file.absolutePath} to ${getDest().absolutePath}")
@@ -78,21 +52,22 @@ class LessTask extends SourceTask {
         }
     }
 
-    def compileLess(engine, src, target) {
+    private static final ResourceUtil RESOURCE_UTIL = new ResourceUtil()
+    private static final String LESSC_DIR = "lessc"
+    private static final String TMP_DIR = "tmp${File.separator}lessc"
+    private final NodeExec node = new NodeExec(project)
+
+    def compileLess(src, target) {
         logger.debug "Processing ${src.canonicalPath} to ${target.canonicalPath}"
-
-        String output
         try {
-            output = engine.compile(src.absoluteFile)
+            final File lesscDir = RESOURCE_UTIL.extractDirToDirectory(
+                    new File(project.buildDir, TMP_DIR), LESSC_DIR)
+            final List<String> args = [lesscDir.canonicalPath + "/bin/lessc"]
+            args.add(src.canonicalPath)
+            node.execute(args, [out: new FileOutputStream(target)])
+
         } catch (e) {
-            throw new LessCompilationException(e, src, project.rootProject)
+            throw new RuntimeException(e)
         }
-
-        if (target.exists()) {
-            target.delete()
-        }
-
-        String cleansedOutput = output.replace("\\n", System.getProperty("line.separator"))
-        target << cleansedOutput
     }
 }
